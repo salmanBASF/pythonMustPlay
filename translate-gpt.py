@@ -1,4 +1,4 @@
-# MINI README
+# README
 # install the dependencies below
 # pip install python-dotenv langchain-openai langchain-core
 # include AZURE_OPENAI_KEY in the .env file
@@ -17,12 +17,12 @@ load_dotenv()
 # CONFIGURATION
 # Directory where the locale files are located
 LOCALES_DIRECTORY = "locales"
-LOCALES_TO_TRANSLATE = ["es", "it", "de", "fr"]
+LOCALES = ["en", "es", "it", "de", "fr"]
 
 
 llm = AzureChatOpenAI(
     azure_endpoint="https://kdcaigateway.intranet.cloudreference.basf.com/",
-    azure_deployment="gpt-4o",
+    azure_deployment="gpt-4o-mini",
     openai_api_version="2024-02-15-preview",
     api_key=os.getenv("AZURE_OPENAI_KEY"),
 )
@@ -40,7 +40,7 @@ def deep_sort_dict(d):
 
 
 # Function to update locale files with translations
-def update_locales(translations, locale_dir):
+def update_locales(translations: dict, locale_dir: str, auto_sort=True):
     for lang_code, translation in translations.items():
         file_path = os.path.join(locale_dir, f"{lang_code}.json")
 
@@ -55,8 +55,10 @@ def update_locales(translations, locale_dir):
         data.update(translation)
 
         # Sort the data alphabetically
-        # sorted_data = deep_sort_dict(data)
-        sorted_data = data
+        if auto_sort:
+            sorted_data = deep_sort_dict(data)
+        else:
+            sorted_data = data
 
         # Write the updated and sorted data back to the JSON file
         with open(file_path, "w", encoding="utf-8") as file:
@@ -64,29 +66,25 @@ def update_locales(translations, locale_dir):
         print(f"Update {lang_code}.json")
 
 
-# IMPORTANT: JSON object to translate
-toTranslateJSON = {"eatAgriculture": {"calculated": "Calculated", "closed": "Closed"}}
-
 # using prompt template
-prompt_template = ChatPromptTemplate.from_template(
+promptTemplate = ChatPromptTemplate.from_template(
     """
     You are an expert in multiple languages. Your task is to translate user-provided text except for the keys in a JSON object.
 
     Instructions:
     - Translate only the values, not the keys.
     - Retain keys even if they are acronyms or not real words.
-    - Return both the original JSON object and the translated version.
+    - Translation all Languages: {locales} except 'english' or 'en'
 
-    Translation Target Languages: {locales}
+    JSON to Translate: {toTranslate}
 
-    JSON Object to Translate: {toTranslate}
-
-    Format for Response:
+    Example Format for Response:
 
     ```json
     {{
-      "original":
-      "translations":
+      "en": {toTranslate},
+      "de": {{}},
+      "it": {{}}
     }}
     ```
     """
@@ -94,15 +92,18 @@ prompt_template = ChatPromptTemplate.from_template(
 
 
 # Chain the components together
-chain = prompt_template | llm | SimpleJsonOutputParser()
+chain = promptTemplate | llm | SimpleJsonOutputParser()
 
-llm_result = chain.invoke(
-    {"locales": LOCALES_TO_TRANSLATE, "toTranslate": toTranslateJSON}
-)
+# IMPORTANT: JSON object to translate
+originalText: dict = {
+    "save": "Save",
+}
+
+# Invoke the chain with the locales and JSON object to translate
+chainResult = chain.invoke({"locales": LOCALES, "toTranslate": originalText})
 
 # preview the result
-pprint.pp(llm_result)
+pprint.pp(chainResult)
 
-# update the locale files with the translations
-if llm_result.get("translations"):
-    update_locales(llm_result["translations"], LOCALES_DIRECTORY)
+if chainResult:
+    update_locales(chainResult, LOCALES_DIRECTORY, auto_sort=False)
