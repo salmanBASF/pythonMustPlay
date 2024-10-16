@@ -1,7 +1,20 @@
-# README
-# install the dependencies below
-# pip install python-dotenv langchain-openai langchain-core
-# include AZURE_OPENAI_KEY in the .env file
+# ABOUT THIS SCRIPT
+# - This script translates a JSON object into multiple languages and saves the translations in their respective locale files.
+# - It uses the Azure Chat OpenAI component from the Langchain library for generating translations.
+# - The script substitutes the values in the JSON object with translations for each respective language.
+# - You have the option to auto sorting the locale files alphabetically in the parameter `auto_sort`.
+#
+# **Pro Tip**: You don't need to input the entire object of existing text if it was too long.
+# Just provide the text you wish to translate, and the script will locate the correct key in the JSON object and update the value with the translation.
+# It won't delete any existing keys, even nested ones.
+
+# SETUP
+# -You must have Python installed on your machine.
+# -install the dependencies below in your terminal
+# ```bash
+#   pip install python-dotenv langchain-openai langchain-core
+# ```
+# include AZURE_OPENAI_KEY in the .env file. You may request from from KDC Gateway team.
 
 import json
 import os
@@ -28,18 +41,34 @@ llm = AzureChatOpenAI(
 )
 
 
-# Utility function to deep sort a dictionary
-def deep_sort_dict(d):
-    sorted_dict = {}
-    for key in sorted(d.keys()):
-        if isinstance(d[key], dict):
-            sorted_dict[key] = deep_sort_dict(d[key])
+def deep_merge_dicts(original, updates):
+    """
+    Recursively merge two dictionaries. Child attributes in the original dictionary
+    are preserved unless explicitly overridden by the updates dictionary.
+    """
+    for key, value in updates.items():
+        if (
+            isinstance(value, dict)
+            and key in original
+            and isinstance(original[key], dict)
+        ):
+            # If both original and updates have a dictionary for this key, merge them
+            deep_merge_dicts(original[key], value)
         else:
-            sorted_dict[key] = d[key]
-    return sorted_dict
+            # Otherwise, override the original value with the new one
+            original[key] = value
 
 
-# Function to update locale files with translations
+def deep_sort_dict(d):
+    """
+    Recursively sort a dictionary by its keys.
+    """
+    return {
+        key: deep_sort_dict(value) if isinstance(value, dict) else value
+        for key, value in sorted(d.items())
+    }
+
+
 def update_locales(translations: dict, locale_dir: str, auto_sort=True):
     for lang_code, translation in translations.items():
         file_path = os.path.join(locale_dir, f"{lang_code}.json")
@@ -51,8 +80,8 @@ def update_locales(translations: dict, locale_dir: str, auto_sort=True):
         else:
             data = {}
 
-        # Update with new translations
-        data.update(translation)
+        # Deep merge with new translations
+        deep_merge_dicts(data, translation)
 
         # Sort the data alphabetically
         if auto_sort:
@@ -63,7 +92,8 @@ def update_locales(translations: dict, locale_dir: str, auto_sort=True):
         # Write the updated and sorted data back to the JSON file
         with open(file_path, "w", encoding="utf-8") as file:
             json.dump(sorted_data, file, ensure_ascii=False, indent=4)
-        print(f"Update {lang_code}.json")
+
+        print(f"Updated {lang_code}.json")
 
 
 # using prompt template
@@ -74,11 +104,11 @@ promptTemplate = ChatPromptTemplate.from_template(
     Instructions:
     - Translate only the values, not the keys.
     - Retain keys even if they are acronyms or not real words.
-    - Translation all Languages: {locales} except 'english' or 'en'
+    - Translate all Languages:- {locales} except for 'english' or 'en'
 
     JSON to Translate: {toTranslate}
 
-    Example Format for Response:
+    Example Format for Response
 
     ```json
     {{
@@ -96,14 +126,18 @@ chain = promptTemplate | llm | SimpleJsonOutputParser()
 
 # IMPORTANT: JSON object to translate
 originalText: dict = {
-    "save": "Save",
+    "modals": {
+        "shareProjectAccess": {
+            "title": "Share access of project to user",
+        }
+    }
 }
 
 # Invoke the chain with the locales and JSON object to translate
 chainResult = chain.invoke({"locales": LOCALES, "toTranslate": originalText})
 
 # preview the result
-pprint.pp(chainResult)
+pprint.pprint(chainResult)
 
 if chainResult:
     update_locales(chainResult, LOCALES_DIRECTORY, auto_sort=False)
